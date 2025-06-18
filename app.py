@@ -173,6 +173,7 @@ public_html = '''
 '''
 
 # Run it
-if __name__ == '__main__':
+@app.before_first_request
+def setup():
     init_db()
-    app.run(host='0.0.0.0', port=5000)
+    
