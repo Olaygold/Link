@@ -5,7 +5,7 @@ import os
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret123")
 
-# SQLite database path (compatible with Render)
+# SQLite database path
 DATABASE = os.path.join(os.path.dirname(__file__), 'links.db')
 
 def get_db():
@@ -14,17 +14,6 @@ def get_db():
         db = g._database = sqlite3.connect(DATABASE)
         db.row_factory = sqlite3.Row
     return db
-
-def init_db():
-    with app.app_context():
-        db = get_db()
-        db.execute('''CREATE TABLE IF NOT EXISTS links (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title TEXT NOT NULL,
-                        url TEXT NOT NULL,
-                        views INTEGER DEFAULT 0,
-                        clicks INTEGER DEFAULT 0)''')
-        db.commit()
 
 @app.teardown_appcontext
 def close_connection(exception):
@@ -173,8 +162,3 @@ public_html = '''
 </body>
 </html>
 '''
-
-# ✅ Initialize database before the app starts
-if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=10000)
