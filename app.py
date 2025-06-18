@@ -15,6 +15,16 @@ def get_db():
         db.row_factory = sqlite3.Row
     return db
 
+def init_db():
+    db = get_db()
+    db.execute('''CREATE TABLE IF NOT EXISTS links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    views INTEGER DEFAULT 0,
+                    clicks INTEGER DEFAULT 0)''')
+    db.commit()
+
 @app.teardown_appcontext
 def close_connection(exception):
     db = getattr(g, '_database', None)
@@ -162,3 +172,9 @@ public_html = '''
 </body>
 </html>
 '''
+
+# ✅ Automatically create the table if not present
+if __name__ == '__main__':
+    with app.app_context():
+        init_db()  # This ensures the table is created on first run
+    app.run(host='0.0.0.0', port=10000)
