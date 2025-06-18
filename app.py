@@ -5,7 +5,7 @@ import os
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret123")
 
-# Use relative path so SQLite works in Render
+# SQLite database path (compatible with Render)
 DATABASE = os.path.join(os.path.dirname(__file__), 'links.db')
 
 def get_db():
@@ -35,8 +35,8 @@ def close_connection(exception):
 @app.route('/')
 def home():
     db = get_db()
-    links = db.execute("SELECT * FROM links").fetchall()
     db.execute("UPDATE links SET views = views + 1")
+    links = db.execute("SELECT * FROM links").fetchall()
     db.commit()
     return render_template_string(public_html, links=links)
 
@@ -44,9 +44,11 @@ def home():
 def click(link_id):
     db = get_db()
     db.execute("UPDATE links SET clicks = clicks + 1 WHERE id = ?", (link_id,))
-    url = db.execute("SELECT url FROM links WHERE id = ?", (link_id,)).fetchone()['url']
+    result = db.execute("SELECT url FROM links WHERE id = ?", (link_id,)).fetchone()
     db.commit()
-    return redirect(url)
+    if result:
+        return redirect(result['url'])
+    return "Invalid Link ID", 404
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -172,8 +174,7 @@ public_html = '''
 </html>
 '''
 
-# Run it
-@app.before_first_request
-def setup():
+# ✅ Initialize database before the app starts
+if __name__ == '__main__':
     init_db()
-    
+    app.run(host='0.0.0.0', port=10000)
