@@ -20,21 +20,35 @@ def close_db(error):
     if db is not None:
         db.close()
 
+
+
+
 def init_db():
     db = get_db()
     cur = db.cursor()
+
+    # Create table if it doesn't exist
     cur.execute('''
         CREATE TABLE IF NOT EXISTS links (
             id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             url TEXT NOT NULL,
-            views INTEGER DEFAULT 0,
-            clicks INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    # Add missing columns (views, clicks) if they don't exist
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='links'")
+    columns = [row['column_name'] for row in cur.fetchall()]
+
+    if 'views' not in columns:
+        cur.execute("ALTER TABLE links ADD COLUMN views INTEGER DEFAULT 0")
+    if 'clicks' not in columns:
+        cur.execute("ALTER TABLE links ADD COLUMN clicks INTEGER DEFAULT 0")
+
     db.commit()
     cur.close()
+
 
 # --- Routes ---
 @app.route('/')
