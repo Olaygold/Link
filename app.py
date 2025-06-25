@@ -1,53 +1,60 @@
 from flask import Flask, request, redirect, render_template_string, session, g
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret123")
 
-# SQLite database path
-DATABASE = os.path.join(os.path.dirname(__file__), 'links.db')
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
+    if 'db' not in g:
+        g.db = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    return g.db
+
+@app.teardown_appcontext
+def close_db(error):
+    db = g.pop('db', None)
+    if db is not None:
+        db.close()
 
 def init_db():
     db = get_db()
-    db.execute('''CREATE TABLE IF NOT EXISTS links (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    url TEXT NOT NULL,
-                    views INTEGER DEFAULT 0,
-                    clicks INTEGER DEFAULT 0)''')
+    cur = db.cursor()
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS links (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            views INTEGER DEFAULT 0,
+            clicks INTEGER DEFAULT 0
+        )
+    ''')
     db.commit()
-
-@app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
-    if db is not None:
-        db.close()
+    cur.close()
 
 @app.route('/')
 def home():
     db = get_db()
-    db.execute("UPDATE links SET views = views + 1")
-    links = db.execute("SELECT * FROM links").fetchall()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM links")
+    links = cur.fetchall()
+    cur.execute("UPDATE links SET views = views + 1")
     db.commit()
+    cur.close()
     return render_template_string(public_html, links=links)
 
 @app.route('/click/<int:link_id>')
 def click(link_id):
     db = get_db()
-    db.execute("UPDATE links SET clicks = clicks + 1 WHERE id = ?", (link_id,))
-    result = db.execute("SELECT url FROM links WHERE id = ?", (link_id,)).fetchone()
+    cur = db.cursor()
+    cur.execute("UPDATE links SET clicks = clicks + 1 WHERE id = %s", (link_id,))
+    cur.execute("SELECT url FROM links WHERE id = %s", (link_id,))
+    url = cur.fetchone()['url']
     db.commit()
-    if result:
-        return redirect(result['url'])
-    return "Invalid Link ID", 404
+    cur.close()
+    return redirect(url)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -70,7 +77,10 @@ def dashboard():
     if not session.get('admin'):
         return redirect('/login')
     db = get_db()
-    links = db.execute("SELECT * FROM links").fetchall()
+    cur = db.cursor()
+    cur.execute("SELECT * FROM links")
+    links = cur.fetchall()
+    cur.close()
     return render_template_string(dashboard_html, links=links)
 
 @app.route('/add', methods=['POST'])
@@ -80,8 +90,10 @@ def add():
     title = request.form['title']
     url = request.form['url']
     db = get_db()
-    db.execute("INSERT INTO links (title, url) VALUES (?, ?)", (title, url))
+    cur = db.cursor()
+    cur.execute("INSERT INTO links (title, url) VALUES (%s, %s)", (title, url))
     db.commit()
+    cur.close()
     return redirect('/dashboard')
 
 @app.route('/delete/<int:link_id>')
@@ -89,8 +101,10 @@ def delete(link_id):
     if not session.get('admin'):
         return redirect('/login')
     db = get_db()
-    db.execute("DELETE FROM links WHERE id = ?", (link_id,))
+    cur = db.cursor()
+    cur.execute("DELETE FROM links WHERE id = %s", (link_id,))
     db.commit()
+    cur.close()
     return redirect('/dashboard')
 
 @app.route('/edit/<int:link_id>', methods=['POST'])
@@ -100,8 +114,10 @@ def edit(link_id):
     title = request.form['title']
     url = request.form['url']
     db = get_db()
-    db.execute("UPDATE links SET title = ?, url = ? WHERE id = ?", (title, url, link_id))
+    cur = db.cursor()
+    cur.execute("UPDATE links SET title = %s, url = %s WHERE id = %s", (title, url, link_id))
     db.commit()
+    cur.close()
     return redirect('/dashboard')
 
 # ===============================
@@ -173,8 +189,8 @@ public_html = '''
 </html>
 '''
 
-# ✅ Automatically create the table if not present
+# Run locally only
 if __name__ == '__main__':
     with app.app_context():
-        init_db()  # This ensures the table is created on first run
-    app.run(host='0.0.0.0', port=10000)
+        init_db()
+    app.run(debug=True)
