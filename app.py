@@ -2,7 +2,29 @@ from flask import Flask, request, redirect, render_template_string, session, g
 import psycopg2
 import psycopg2.extras
 import os
+# create_links_table.py
+import psycopg2
 
+conn = psycopg2.connect(
+    dbname="your_db",
+    user="your_user",
+    password="your_pass",
+    host="your_host",
+    port="your_port"
+)
+
+cur = conn.cursor()
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS links (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+""")
+conn.commit()
+cur.close()
+conn.close()
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret123")
 
