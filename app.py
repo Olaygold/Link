@@ -3,12 +3,10 @@ import psycopg2
 import psycopg2.extras
 import os
 
-# --- Configuration ---
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret123")
-DATABASE_URL = os.environ.get("DATABASE_URL", "dbname=liink_db user=liink_db_user password=bBozyyyaARlKGeElmudpAmcADsqFaths host=dpg-d1dulomr433s73fr9da0-a port=5432")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# --- Database Connection ---
 def get_db():
     if 'db' not in g:
         g.db = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
@@ -17,17 +15,13 @@ def get_db():
 @app.teardown_appcontext
 def close_db(error):
     db = g.pop('db', None)
-    if db is not None:
+    if db:
         db.close()
-
-
-
 
 def init_db():
     db = get_db()
     cur = db.cursor()
 
-    # Create table if it doesn't exist
     cur.execute('''
         CREATE TABLE IF NOT EXISTS links (
             id SERIAL PRIMARY KEY,
@@ -37,10 +31,9 @@ def init_db():
         )
     ''')
 
-    # Add missing columns (views, clicks) if they don't exist
+    # Ensure views and clicks columns exist
     cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='links'")
     columns = [row['column_name'] for row in cur.fetchall()]
-
     if 'views' not in columns:
         cur.execute("ALTER TABLE links ADD COLUMN views INTEGER DEFAULT 0")
     if 'clicks' not in columns:
@@ -49,19 +42,24 @@ def init_db():
     db.commit()
     cur.close()
 
+# Ensure database is always ready
+with app.app_context():
+    init_db()
 
-# --- Routes ---
 @app.route('/')
 def home():
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT * FROM links")
     links = cur.fetchall()
+
+    # Don't update views unless admin is logged out (only public views count)
     if not session.get('admin'):
         cur.execute("UPDATE links SET views = views + 1")
         db.commit()
+
     cur.close()
-    return render_template_string(public_html, links=links, is_admin=session.get('admin'))
+    return render_template_string(public_html, links=links, admin=session.get('admin', False))
 
 @app.route('/click/<int:link_id>')
 def click(link_id):
@@ -200,7 +198,7 @@ public_html = '''
     <div class="topic">
       <div class="title">{{ link.title }}</div>
       <a href="/click/{{ link.id }}" target="_blank">👉 Click to view</a><br>
-      {% if is_admin %}
+      {% if admin %}
         <small>Views: {{ link.views }}, Clicks: {{ link.clicks }}</small>
       {% endif %}
     </div>
@@ -208,9 +206,3 @@ public_html = '''
 </body>
 </html>
 '''
-
-# --- Run App ---
-if __name__ == '__main__':
-    with app.app_context():
-        init_db()
-    app.run(debug=True)
