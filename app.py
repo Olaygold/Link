@@ -2,34 +2,13 @@ from flask import Flask, request, redirect, render_template_string, session, g
 import psycopg2
 import psycopg2.extras
 import os
-import psycopg2
 
-conn = psycopg2.connect(
-    dbname="liink_db",
-    user="liink_db_user",
-    password="bBozyyyaARlKGeElmudpAmcADsqFaths",
-    host="dpg-d1dulomr433s73fr9da0-a",
-    port=5432
-)
-
-cur = conn.cursor()
-cur.execute("""
-    CREATE TABLE IF NOT EXISTS links (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        url TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-""")
-conn.commit()
-cur.close()
-conn.close()
-
+# --- Configuration ---
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "secret123")
+DATABASE_URL = os.environ.get("DATABASE_URL", "dbname=liink_db user=liink_db_user password=bBozyyyaARlKGeElmudpAmcADsqFaths host=dpg-d1dulomr433s73fr9da0-a port=5432")
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
+# --- Database Connection ---
 def get_db():
     if 'db' not in g:
         g.db = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
@@ -50,22 +29,25 @@ def init_db():
             title TEXT NOT NULL,
             url TEXT NOT NULL,
             views INTEGER DEFAULT 0,
-            clicks INTEGER DEFAULT 0
+            clicks INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     db.commit()
     cur.close()
 
+# --- Routes ---
 @app.route('/')
 def home():
     db = get_db()
     cur = db.cursor()
     cur.execute("SELECT * FROM links")
     links = cur.fetchall()
-    cur.execute("UPDATE links SET views = views + 1")
-    db.commit()
+    if not session.get('admin'):
+        cur.execute("UPDATE links SET views = views + 1")
+        db.commit()
     cur.close()
-    return render_template_string(public_html, links=links)
+    return render_template_string(public_html, links=links, is_admin=session.get('admin'))
 
 @app.route('/click/<int:link_id>')
 def click(link_id):
@@ -204,14 +186,16 @@ public_html = '''
     <div class="topic">
       <div class="title">{{ link.title }}</div>
       <a href="/click/{{ link.id }}" target="_blank">👉 Click to view</a><br>
-      <small>Views: {{ link.views }}, Clicks: {{ link.clicks }}</small>
+      {% if is_admin %}
+        <small>Views: {{ link.views }}, Clicks: {{ link.clicks }}</small>
+      {% endif %}
     </div>
   {% endfor %}
 </body>
 </html>
 '''
 
-# Run locally only
+# --- Run App ---
 if __name__ == '__main__':
     with app.app_context():
         init_db()
